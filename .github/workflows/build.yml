@@ -39,19 +39,24 @@ jobs:
           libelf-dev \
           python3 \
           python-is-python3 \
+          python2 \
           gcc-aarch64-linux-gnu \
           binutils-aarch64-linux-gnu \
           gcc-arm-linux-gnueabi \
           binutils-arm-linux-gnueabi
 
-      - name: Setup Extra Swap
-        run: |
-          sudo fallocate -l 8G /extraswap
-          sudo chmod 600 /extraswap
-          sudo mkswap /extraswap
-          sudo swapon /extraswap
+          sudo ln -sf /usr/bin/python2 /usr/bin/python || true
 
-          echo "====== MEMORY INFO ======"
+      - name: Create Swap
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile || true
+
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
           free -h
 
       - name: Download Clang
@@ -78,6 +83,12 @@ jobs:
 
           ln -sf ../KernelSU/kernel drivers/kernelsu
 
+          grep -q "kernelsu" drivers/Makefile || \
+          echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+
+          grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
+          sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
       - name: Create Out Directory
         run: |
           mkdir -p out
@@ -100,16 +111,11 @@ jobs:
           echo "CONFIG_IPC_NS=y" >> out/.config
           echo "CONFIG_DEVTMPFS=y" >> out/.config
 
-          yes "" | make O=out ARCH=${ARCH} oldconfig
+          echo "CONFIG_BACKLIGHT_CLASS_DEVICE=y" >> out/.config
 
-      - name: Disable LTO
-        run: |
-          sed -i 's/CONFIG_LTO=y/# CONFIG_LTO is not set/g' out/.config || true
-
-          sed -i 's/CONFIG_LTO_CLANG=y/# CONFIG_LTO_CLANG is not set/g' out/.config || true
-
-          sed -i 's/CONFIG_THINLTO=y/# CONFIG_THINLTO is not set/g' out/.config || true
-
+          echo "# CONFIG_LTO is not set" >> out/.config
+          echo "# CONFIG_LTO_CLANG is not set" >> out/.config
+          echo "# CONFIG_THINLTO is not set" >> out/.config
           echo "CONFIG_LTO_NONE=y" >> out/.config
 
           yes "" | make O=out ARCH=${ARCH} oldconfig
@@ -125,8 +131,16 @@ jobs:
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
+      - name: Show Build Result
+        run: |
+          ls -lh out/arch/arm64/boot/
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: AliothKernel
-          path: out/arch/arm64/boot/
+          path: |
+            out/arch/arm64/boot/Image
+            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/Image.gz-dtb
+            out/arch/arm64/boot/dtbo.img

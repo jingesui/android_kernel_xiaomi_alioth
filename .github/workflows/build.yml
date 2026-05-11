@@ -44,12 +44,12 @@ jobs:
           gcc-arm-linux-gnueabi \
           binutils-arm-linux-gnueabi
 
-      - name: Setup Swap
+      - name: Setup Extra Swap
         run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          sudo fallocate -l 8G /extraswap
+          sudo chmod 600 /extraswap
+          sudo mkswap /extraswap
+          sudo swapon /extraswap
 
           echo "====== MEMORY INFO ======"
           free -h

@@ -1,12 +1,86 @@
-name: Test
+name: Build Alioth Kernel
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-22.04
+
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      KERNEL_CONFIG: alioth_defconfig
+      CLANG_BRANCH: android11-release
+      CLANG_VERSION: r365631c
 
     steps:
-      - name: Hello
-        run: echo hello
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: sudo apt update && sudo apt install -y git wget curl zip unzip bc bison flex cpio kmod rsync build-essential libssl-dev libelf-dev python3 python-is-python3 gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+      - name: Download Clang
+        run: |
+          wget -O clang.tar.gz https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${CLANG_BRANCH}/clang-${CLANG_VERSION}.tar.gz
+          mkdir clang
+          tar -xzf clang.tar.gz -C clang
+
+      - name: Setup PATH
+        run: echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+
+      - name: Show Toolchain
+        run: |
+          clang --version
+          aarch64-linux-gnu-gcc --version
+
+      - name: Create Out Directory
+        run: mkdir -p out
+
+      - name: Generate Defconfig
+        run: |
+          make O=out \
+          ARCH=${ARCH} \
+          SUBARCH=${SUBARCH} \
+          CC=clang \
+          LLVM=1 \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          ${KERNEL_CONFIG}
+
+      - name: Enable DroidSpaces Config
+        run: |
+          echo "CONFIG_PID_NS=y" >> out/.config
+          echo "CONFIG_IPC_NS=y" >> out/.config
+          echo "CONFIG_DEVTMPFS=y" >> out/.config
+
+          yes "" | make O=out ARCH=${ARCH} oldconfig
+
+      - name: Disable LTO
+        run: |
+          sed -i 's/CONFIG_LTO=y/# CONFIG_LTO is not set/g' out/.config || true
+          sed -i 's/CONFIG_LTO_CLANG=y/# CONFIG_LTO_CLANG is not set/g' out/.config || true
+          sed -i 's/CONFIG_THINLTO=y/# CONFIG_THINLTO is not set/g' out/.config || true
+
+          echo "CONFIG_LTO_NONE=y" >> out/.config
+
+          yes "" | make O=out ARCH=${ARCH} oldconfig
+
+      - name: Build Kernel
+        run: |
+          make -j4 O=out \
+          ARCH=${ARCH} \
+          SUBARCH=${SUBARCH} \
+          CC=clang \
+          LLVM=1 \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AliothKernel
+          path: out/arch/arm64/boot/

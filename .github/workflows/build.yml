@@ -44,6 +44,16 @@ jobs:
           gcc-arm-linux-gnueabi \
           binutils-arm-linux-gnueabi
 
+      - name: Setup Swap
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
+          echo "====== MEMORY INFO ======"
+          free -h
+
       - name: Download Clang
         run: |
           wget -O clang.tar.gz \
@@ -106,7 +116,7 @@ jobs:
 
       - name: Build Kernel
         run: |
-          make -j4 O=out \
+          make -j1 O=out \
           ARCH=${ARCH} \
           SUBARCH=${SUBARCH} \
           CC=clang \
